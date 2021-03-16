@@ -94,12 +94,12 @@ typedef struct task {
   int (*TickFct)(int); // Function to call for task's tick
 } task;
 
-task tasks[1];
+task tasks[2];
 
-const unsigned char tasksNum = 1;
+const unsigned char tasksNum = 2;
 
 const unsigned long tasksPeriodGCD = 1;
-const unsigned long periodSample = 250;
+const unsigned long periodSample = 100;
 const unsigned long periodDisplay = 1;
 
 enum DSPLY_States {DS_start, DS_game, DS_score, DS_blank, DS_firework};
@@ -230,9 +230,10 @@ int DSPLY_Tick(int state) {
 	}
 	//transmit_data(g_pattern, 0);
 	//transmit_data(~g_row, 1);
+	transmit_data(0xFF, 1);
 	transmit_data(dispBuf[curRow], 0);
-	// for ( i=0; i<15; i++ ) { asm("nop"); } 
 	transmit_data(~(0x01 << curRow), 1);
+	// for ( i=0; i<15; i++ ) { asm("nop"); } 
 	//  Next row
 	if (curRow < 4) curRow++;
 	else            curRow = 0;
@@ -244,21 +245,26 @@ int JS_Tick(int state) {
 	static unsigned char pattern = 0x10;	// LED pattern - 0: LED off; 1: LED on
 	short deviation;   	                // Joy stick position deviation from neutral
 	//adc 
-	Set_A2D_Pin(0);
+	Set_A2D_Pin(1);
 	unsigned short input = ADC;
 	
 	// Actions
 	switch (state) {
 		case sample:
 			// update dot in horizental direction
-			if(input > 562){
-				if(pattern > 0x01) pattern = pattern >> 1;
+			if(input > 600){
+				//if(pattern > 0x01) pattern = pattern >> 1;
 				// else pattern = 0x80; 
+				if(rPadY > 0) rPadY = rPadY - 1;
+				else rPadY = 0x00; 
 			}
-			else if(input < 462){
-				if(pattern < 0x80) pattern = pattern << 1;
+			else if(input < 400){
+				//if(pattern < 0x80) pattern = pattern << 1;
 				// else pattern = 0x01;
+				if(rPadY < 3) rPadY = rPadY + 1;
+				else rPadY = 0x03; 
 			}	
+			/*
 			// update update rate
 			deviation = input - 512;
 			if (deviation < 0) deviation = -deviation;
@@ -270,7 +276,7 @@ int JS_Tick(int state) {
 				tasks[1].period = 500;
 			else
 				tasks[1].period = 1000;
-			
+			*/
 			break;
 		default:
 			break;
