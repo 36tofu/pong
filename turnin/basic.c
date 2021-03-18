@@ -1,14 +1,14 @@
-
-/*	Author: lab
- *  Partner(s) Name: 
- *	Lab Section:
- *	Assignment: PORTB = tmpBT1;Lab #  Exercise #
- *	Exercise Description: [optional - include for your own benefit]
+/* Author:Christopher Chen
+ * Partner(s) Name (if applicable):  
+ * Lab Section:21
+ * Assignment: Lab #14  Exercise #1
+ * Exercise Description: [optional - include for your own benefit]
  *
- *	I acknowledge all content contained herein, excluding template or example
- *	code, is my own original work.
- */
-#include <avr/io.h>
+ * I acknowledge all content contained herein, excluding template or example
+ * code, is my own original work.
+ *
+ *  Demo Link:https://www.youtube.com/watch?v=BL_yxMDqTlE
+ */#include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #ifdef _SIMULATE_
@@ -277,19 +277,6 @@ int JS_Tick(int state) {
 				if(rPadY < 3) rPadY = rPadY + 1;
 				else rPadY = 0x03; 
 			}	
-			/*
-			// update update rate
-			deviation = input - 512;
-			if (deviation < 0) deviation = -deviation;
-			if (deviation > 450)
-				tasks[1].period = 100;
-			else if (deviation > 300)
-				tasks[1].period = 250;
-			else if (deviation > 150)
-				tasks[1].period = 500;
-			else
-				tasks[1].period = 1000;
-			*/
 			break;
 		default:
 			break;
@@ -297,28 +284,6 @@ int JS_Tick(int state) {
 	g_pattern = pattern;
 	return state;
 }
-
-/*
-int LP_Tick(int state) {
-	unsigned char tmpD = (~PIND & 0x03);
-	// Actions
-	switch (state) {
-		case sampleLP:
-			if ( tmpD == 0x02 ) {
-				if(lPadY > 1) lPadY = lPadY - 1;
-				else lPadY = 0x01; 
-			} else if ( tmpD == 0x01 ) {
-				if(lPadY < 3) lPadY = lPadY + 1;
-				else lPadY = 0x03; 
-			}	
-			break;
-		default:
-			break;
-	}
-	return state;
-}
-*/
-
 
 int LP_Tick(int state) {
 	// Actions
@@ -363,13 +328,6 @@ int BALL_Tick(int state) {
 			  state = BALL_run;
 			  break;
 		case BALL_run:
-			  /*
-			  if(speedChange == 0) tasks[2].period = 350;
-			  else{
-				  speedChange--;
-				  tasks[2].period = 100;
-			  }
-			  */
 			  //if ball goin left
 			  if(ballH == 0){
 				  //if it's not at the left of board, keep incrementing
@@ -386,13 +344,6 @@ int BALL_Tick(int state) {
 						  ballH = 1;
 						  ballX++;
 					  }
-						/*
-						//accel on hit corner
-						if(((ballV == 1) && (ballY == rPadY)) || ((ballV == 0) && (ballY == rPadY+1))){
-							speedChange == 20;
-				  			tasks[2].period = 100;
-						}
-						*/						
 					  //if you miss
 					  else{
 						  state = BALL_stop;
