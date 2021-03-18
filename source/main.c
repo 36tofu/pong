@@ -13,6 +13,7 @@
 #include <avr/sleep.h>
 #ifdef _SIMULATE_
 #include "simAVRHeader.h"
+#include <stdlib.h>
 #endif
 
 
@@ -94,19 +95,28 @@ typedef struct task {
   int (*TickFct)(int); // Function to call for task's tick
 } task;
 
-task tasks[2];
+task tasks[4];
 
-const unsigned char tasksNum = 2;
+const unsigned char tasksNum = 4;
 
 const unsigned long tasksPeriodGCD = 1;
-const unsigned long periodSample = 100;
+const unsigned long periodSample = 40;
 const unsigned long periodDisplay = 1;
+const unsigned long periodBall = 350;
+const unsigned long periodLP = 150;
 
 enum DSPLY_States {DS_start, DS_game, DS_score, DS_blank, DS_firework};
 int DSPLY_Tick(int state);
 
+
+enum BALL_Tick {BALL_start, BALL_run, BALL_stop};
+int BALL_Tick(int state);
+
 enum JS_States {sample};
 int JS_Tick(int state);
+
+enum LP_States {sampleLP};
+int LP_Tick(int state);
 
 int JSV_Tick(int state);
 
@@ -142,14 +152,18 @@ unsigned char lScore = 0;
 unsigned char rScore = 4;
 unsigned char ballX = 3;
 unsigned char ballY = 3;
-unsigned char lPadY = 3;
-unsigned char rPadY = 0;
-
+unsigned char rPadY = 1;
+unsigned char lPadY = 1;
+unsigned char ballH = 0;
+unsigned char ballV = 0;
+unsigned char missR = 0;
+unsigned char missL = 0;
+unsigned char ballRestart = 0;
+unsigned char paddleMove = 0;
 
 int main() {
- 
   DDRB = 0x07; PORTB = 0x00;
-  DDRD = 0xFF; PORTD = 0x00;
+  DDRD = 0x00; PORTD = 0xFF;
   DDRC = 0xFF; PORTC = 0x00;
   unsigned char i=0;
   A2D_init();
@@ -163,10 +177,15 @@ int main() {
   tasks[i].elapsedTime = tasks[i].period;
   tasks[i].TickFct = &JS_Tick;
   ++i;
-  tasks[i].state = sample;
-  tasks[i].period = periodSample;
+  tasks[i].state = BALL_start;
+  tasks[i].period = periodBall;
   tasks[i].elapsedTime = tasks[i].period;
-  tasks[i].TickFct = &JSV_Tick;
+  tasks[i].TickFct = &BALL_Tick;
+  ++i;
+  tasks[i].state = sampleLP;
+  tasks[i].period = periodLP;
+  tasks[i].elapsedTime = tasks[i].period;
+  tasks[i].TickFct = &LP_Tick;
   //TimerSet(tasksPeriodGCD);
 
   TimerOn();
@@ -203,16 +222,18 @@ int DSPLY_Tick(int state) {
 			  break;
 		case DS_game:
 			  // Ball display
-			  // dispBuf[ballY] = 0x01 << ballX;
-			  dispBuf[3] = 0x01 << 3;
+			  if(missR == 0 && missL == 0)
+			  	dispBuf[ballY] = 0x01 << ballX;
+			  
+			  //dispBuf[3] = 0x01 << 3;
 			  // left paddle display
+			  dispBuf[lPadY-1] = dispBuf[lPadY-1] | (0x01 << 7);
 			  dispBuf[lPadY] = dispBuf[lPadY] | (0x01 << 7);
-			  nxtRow = lPadY +1;
-			  dispBuf[nxtRow] = dispBuf[nxtRow] | (0x01 << 7);
+			  dispBuf[lPadY+1] = dispBuf[lPadY+1] | (0x01 << 7);
 			  // right paddle display
+			  dispBuf[rPadY-1] = dispBuf[rPadY-1] | 0x01;
 			  dispBuf[rPadY] = dispBuf[rPadY] | 0x01;
-			  nxtRow = rPadY +1;
-			  dispBuf[nxtRow] = dispBuf[nxtRow] | 0x01;
+			  dispBuf[rPadY+1] = dispBuf[rPadY+1] | 0x01;
 			  break;
 		case DS_score:
 			  dispBuf[0] = (score0[lScore]<<5) | (score0[rScore]); 
@@ -228,12 +249,9 @@ int DSPLY_Tick(int state) {
 		default:
 			  break;
 	}
-	//transmit_data(g_pattern, 0);
-	//transmit_data(~g_row, 1);
 	transmit_data(0xFF, 1);
 	transmit_data(dispBuf[curRow], 0);
 	transmit_data(~(0x01 << curRow), 1);
-	// for ( i=0; i<15; i++ ) { asm("nop"); } 
 	//  Next row
 	if (curRow < 4) curRow++;
 	else            curRow = 0;
@@ -251,19 +269,19 @@ int JS_Tick(int state) {
 	// Actions
 	switch (state) {
 		case sample:
-			// update dot in horizental direction
+			// update right paddle position
 			if(input > 600){
-				//if(pattern > 0x01) pattern = pattern >> 1;
-				// else pattern = 0x80; 
-				if(rPadY > 0) rPadY = rPadY - 1;
-				else rPadY = 0x00; 
+				paddleMove = 1;
+				if(rPadY > 1) rPadY = rPadY - 1;
+				else rPadY = 0x01; 
 			}
 			else if(input < 400){
-				//if(pattern < 0x80) pattern = pattern << 1;
-				// else pattern = 0x01;
+				paddleMove = 1;
 				if(rPadY < 3) rPadY = rPadY + 1;
 				else rPadY = 0x03; 
-			}	
+			}
+			else
+				paddleMove = 0;
 			/*
 			// update update rate
 			deviation = input - 512;
@@ -285,42 +303,189 @@ int JS_Tick(int state) {
 	return state;
 }
 
-int JSV_Tick(int state) {
-	static unsigned char row = 0x04;  	// Row(s) displaying pattern. 
-	short deviation;   	                // Joy stick position deviation from neutral
-	//adc 
-	Set_A2D_Pin(1);
-	unsigned short input = ADC;
-	
+/*
+int LP_Tick(int state) {
+	unsigned char tmpD = (~PIND & 0x03);
 	// Actions
 	switch (state) {
-		case sample:
-			// update dot in horizental direction
-			if(input > 562){
-				if(row > 0x01) row = row >> 1;
-				// else row = 0x80; 
-			}
-			else if(input < 462){
-				if(row < 0x10) row = row << 1;
-				// else row = 0x01;
+		case sampleLP:
+			if ( tmpD == 0x02 ) {
+				if(lPadY > 1) lPadY = lPadY - 1;
+				else lPadY = 0x01; 
+			} else if ( tmpD == 0x01 ) {
+				if(lPadY < 3) lPadY = lPadY + 1;
+				else lPadY = 0x03; 
 			}	
-			// update update rate
-			deviation = input - 512;
-			if (deviation < 0) deviation = -deviation;
-			if (deviation > 450)
-				tasks[2].period = 100;
-			else if (deviation > 300)
-				tasks[2].period = 250;
-			else if (deviation > 150)
-				tasks[2].period = 500;
-			else
-				tasks[2].period = 1000;
-			
 			break;
 		default:
 			break;
 	}
-	g_row = row;
+	return state;
+}
+*/
+
+int LP_Tick(int state) {
+	// Actions
+	unsigned char retard;
+	retard = rand() % 8;
+	PORTB = retard;
+	
+	switch (state) {
+		case sampleLP:
+			//if(ballH == 1 && ballX >= 5 && retard > 5){
+			if(ballH == 1 && ballX >= 5){
+				if(ballY == 4){
+					if(lPadY < 3)
+						lPadY++;
+				}
+				else if(ballY == 1){
+					if(lPadY > 1)
+						lPadY--;
+				}
+				else if(ballV == 0){
+					if(lPadY > 1)
+						lPadY--;
+				}
+				else if(ballV == 1){
+					if(lPadY < 3)
+						lPadY++;
+				}
+			}
+			break;
+		default:
+			break;
+	}
+	return state;
+}
+
+int BALL_Tick(int state) {
+	// Action 
+	unsigned char tmpD = (~PIND & 0x04);
+	PORTB = tmpD;
+	unsigned char curveBall = 0;
+	static unsigned char speedChange = 0;
+	switch (state) {
+		case BALL_start:
+			  state = BALL_run;
+			  break;
+		case BALL_run:
+			  //speeding 
+			  if(speedChange == 0) tasks[2].period = 350;
+			  else{
+				  speedChange--;
+				  tasks[2].period = 100;
+			  }
+			  
+			  //if ball goin left
+			  if(ballH == 0){
+				  //if it's not at the left of board, keep incrementing
+				  if(ballX > 1) ballX--;
+				  else if(ballX == 1){ 
+					  //if paddle hit corner
+					  if((ballY == rPadY-1) || (ballY == rPadY+1)){
+					  	ballH = 1;
+					       	ballV = 1-ballV;	
+					  	ballX++;
+						speedChange = 5;
+				  		tasks[2].period = 100;
+						if(paddleMove == 1){
+							curveBall = 1;
+						}
+					  }
+					  //hit center
+					  else if(ballY == rPadY){
+						  ballH = 1;
+						  ballX++;
+					  }
+						/*
+						//accel on hit corner
+						if(((ballV == 1) && (ballY == rPadY)) || ((ballV == 0) && (ballY == rPadY+1))){
+							speedChange == 20;
+				  			tasks[2].period = 100;
+						}
+						*/						
+					  //if you miss
+					  else{
+						  state = BALL_stop;
+						  missR = 1;
+						  ballX--;
+					  }
+				  }
+			  }
+			  
+			  else // ballH == 1, ball travelling to right
+			  {
+				  //if it's not at the left of board, keep incrementing
+				  if(ballX < 6) ballX++;
+				  else if(ballX == 6){ 
+					  //if paddle hit corner
+					  if((ballY == lPadY-1) || (ballY == lPadY+1)){
+					  	ballH = 0;
+					       	ballV = 1-ballV;	
+					  	ballX--;
+						speedChange = 5;
+				  		tasks[2].period = 100;
+					  }
+					  //hit center
+					  else if(ballY == lPadY){
+						  ballH = 0;
+						  ballX--;
+					  }
+						/*
+						//accel on hit corner
+						if(((ballV == 1) && (ballY == lPadY)) || ((ballV == 0) && (ballY == lPadY+1))){
+							speedChange == 20;
+				  			tasks[2].period = 100;
+						}
+						*/						
+					  //if you miss
+					  else{
+						  state = BALL_stop;
+						  missL = 1;
+						  ballX++;
+					  }
+				  }
+				  //if(ballX != 7) ballX++;
+				  //else{ ballH = 0; ballX--;}
+			  }
+
+			  // Vertical bouncing
+			  if(ballV == 0){//if ball going "up"
+				  if(curveBall = 0){//if paddle not moving
+				  	if(ballY != 0) ballY--; //if not hit bottom
+				  	else{ ballV = 1; ballY++;}
+				  }
+				  else{//if paddle moving
+				  	if(ballY >= 2) ballY = ballY -2; //
+				  	else{ ballV = 1; ballY++;}
+				  }
+			  }
+			  else{//ball going up
+				  //if(curveBall = 0){
+				  	if(ballY != 4) ballY++; //if not hit top
+				  	else{ ballV = 0; ballY--;}
+				  //}
+				  //else{
+				  //	if(ballY <= 3) ballY = ballY + 2; //if not hit top
+				  //	else{ ballV = 0; ballY--;}
+				  //}
+			  }
+			  break;
+		case BALL_stop:
+			if(tmpD == 0x04){
+				missR = 0;
+				missL = 0;
+				ballX = 0x03;
+				ballY = 0x02;
+				state = BALL_run;
+			}
+			else
+				state = BALL_stop;
+			  break;
+		default:
+			  break;
+	}
+	// Return state
 	return state;
 }
 
